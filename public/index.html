@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Creadir</title>
+<meta name="description" content="Drop a photo, ad, or social media post and the creative director will analyze its creativity (or lack thereof). Understand. Design. Prompt.">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/favicon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Creadir">
+<meta property="og:title" content="Creadir">
+<meta property="og:description" content="Drop a photo, ad, or social media post and the creative director will analyze its creativity (or lack thereof). Understand. Design. Prompt.">
+<meta property="og:url" content="https://creadir.vercel.app/">
+<meta property="og:image" content="https://creadir.vercel.app/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="631">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Creadir">
+<meta name="twitter:description" content="Drop a photo, ad, or social media post and the creative director will analyze its creativity (or lack thereof).">
+<meta name="twitter:image" content="https://creadir.vercel.app/og.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Newsreader:ital,opsz,wght@1,6..72,400;1,6..72,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header id="topbar">
+  <div class="brand" id="brand"><img class="brand-hat" alt="Back to start"><span class="wordmark">Crea<em>dir.</em></span></div>
+  <div class="topbar-right">
+    <button id="btn-feedback" class="icon-btn fb-btn" title="Send feedback" aria-label="Send feedback">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M17 10a7 7 0 0 1-7 7c-1.2 0-2.3-.25-3.3-.7L3 17l.9-3.2A7 7 0 1 1 17 10z"/>
+        <line x1="10" y1="6.4" x2="10" y2="10.4"/>
+        <line x1="10" y1="13.1" x2="10" y2="13.15"/>
+      </svg>
+    </button>
+    <button id="btn-restart" class="ghost-btn hidden">New image</button>
+  </div>
+</header>
+
+<!-- Screen 1 · entry -->
+<main id="entry">
+  <h1>Crea<em>dir.</em></h1>
+  <div id="dropzone">
+    <div id="bar-fill"></div>
+    <button id="btn-upload" class="icon-btn" title="Upload an image" aria-label="Upload an image">+</button>
+    <span id="thumb-wrap" class="hidden">
+      <img id="entry-thumb" alt="">
+      <button id="thumb-x" aria-label="Cancel upload" title="Cancel">×</button>
+    </span>
+    <input id="file-input" type="file" accept="image/*" class="hidden">
+    <input id="text-input" type="text" spellcheck="false"
+      placeholder="Drop an image, paste a link, or type a concept…" autocomplete="off">
+    <span id="lets-go" class="hidden">Let's go! →</span>
+    <button id="btn-go" class="eye-btn" title="Generate" aria-label="Generate">
+      <span class="eye"><span class="veins"></span><span class="iris"><span class="pupil"></span></span><span class="blue-rise"></span><span class="glint"></span></span>
+    </button>
+  </div>
+  <p class="entry-hint">Drop a photo, ad, or social media post and the creative director
+    will analyze its creativity (or lack thereof).</p>
+  <div id="recent" class="hidden">
+    <p class="recent-label">Recently judged</p>
+    <div id="recent-track"></div>
+  </div>
+</main>
+
+<!-- Screen 2 · stage: framed ad left, findings right -->
+<section id="stage" class="hidden">
+  <div class="stage-left">
+    <div id="frame"><img id="ad-img" alt="The work being analyzed"></div>
+    <div id="gallery-strip" class="hidden"></div>
+    <div id="what-card" class="hidden">
+      <div class="what-top">
+        <span class="what-label">What this is</span>
+        <span class="type-wrap">
+          <button id="what-type" title="Wrong? Click to correct it"></button>
+          <div id="type-menu" class="hidden"></div>
+        </span>
+      </div>
+      <p id="what-desc"></p>
+    </div>
+    <div id="brand-card" class="hidden">
+      <button class="brand-head" id="brand-head">
+        <img id="brand-logo" alt="">
+        <span class="brand-head-text">
+          <span class="brand-head-label">The brand</span>
+          <span id="brand-name"></span>
+        </span>
+        <svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4.5l3 3 3-3"/></svg>
+      </button>
+      <div class="brand-bio"><p id="brand-bio-text"></p></div>
+    </div>
+    <div id="overall" class="hidden">
+      <p class="overall-label">Overall read</p>
+      <p id="overall-text"></p>
+      <p id="sharpen-note" class="hidden"></p>
+      <p id="routing-note" class="hidden"></p>
+    </div>
+  </div>
+
+  <aside id="findings-panel" class="hidden">
+    <div id="grade-card" class="hidden"></div>
+    <p class="panel-label" id="panel-label">Why this works</p>
+    <div id="findings"></div>
+    <button id="btn-analyze-result" class="ghost-btn hidden">Break down why this works</button>
+  </aside>
+</section>
+
+<div id="loading" class="hidden">
+  <div class="loader-ring"></div>
+  <p id="loading-text">Reading the work…</p>
+</div>
+
+<!-- Prompt tray -->
+<footer id="tray" class="hidden">
+  <div class="tray-top">
+    <p class="tray-label">Your prompt <span id="tray-count">· 0 of 6 dimensions</span></p>
+    <div class="tray-actions">
+      <button id="btn-copy" class="ghost-btn">Copy for Ad Studio</button>
+      <button id="btn-generate" class="pill-btn">Generate</button>
+    </div>
+  </div>
+  <div id="tray-chips"><span class="tray-empty">Tap “add” on the techniques you like — they become your prompt.</span></div>
+  <p id="compiled" class="hidden"></p>
+</footer>
+
+<div id="toast" class="hidden"></div>
+
+<div id="feedback-modal" class="hidden">
+  <div class="fb-card">
+    <p class="panel-label">Anonymous feedback</p>
+    <textarea id="fb-text" rows="5" maxlength="4000"
+      placeholder="What's working? What's broken? Be blunt — it's anonymous."></textarea>
+    <div class="fb-actions">
+      <button id="fb-cancel" class="ghost-btn">Cancel</button>
+      <button id="fb-send" class="pill-btn">Send</button>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+<script src="/hat.js"></script>
+</body>
+</html>

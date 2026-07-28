@@ -1,0 +1,5 @@
+.env
+.env.*
+knowledge/
+server.py
+README.md
