@@ -42,6 +42,9 @@
     hat.draggable = false;
     hat.style.width = SIZE + "px";
     hat.style.height = SIZE + "px";
+    // park it offscreen until spawn() places it — otherwise it paints
+    // untransformed at the layer's top-left corner for the first 600ms
+    hat.style.transform = "translate(-9999px, -9999px)";
     layer.appendChild(hat);
 
     const bodyW = SIZE * 0.72, bodyH = SIZE * 0.52;
