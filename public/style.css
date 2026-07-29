@@ -269,32 +269,35 @@ body.staged .brand { cursor: pointer; }
 /* ---------- stage: framed ad module left, findings right ---------- */
 #stage {
   display: grid;
-  grid-template-columns: minmax(320px, 46%) 1fr;
-  gap: 28px;
-  padding: 74px 24px 170px;
-  max-width: 1280px;
-  margin: 0 auto;
+  grid-template-columns: minmax(0, 1fr) minmax(380px, 42%);
+  gap: 0;
+  padding: 0;
+  max-width: none;
+  margin: 0;
   align-items: start;
 }
+/* the work fills the left pane edge to edge and stays put while the
+   findings column scrolls */
 .stage-left {
-  position: sticky; top: 74px;
-  display: flex; flex-direction: column; gap: 10px; /* hidden cards leave no gap */
+  position: sticky; top: 0;
+  height: 100vh;
 }
 #frame {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 10px;
+  width: 100%; height: 100%;
   display: flex; align-items: center; justify-content: center;
 }
 #ad-img {
-  display: block; max-width: 100%;
-  max-height: calc(100vh - 300px);
-  border-radius: 8px;
+  display: block;
+  width: 100%; height: 100%;
   object-fit: contain;
 }
 #gallery-strip {
-  display: flex; gap: 6px; flex-wrap: wrap;
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: 14px;
+  display: flex; gap: 6px; flex-wrap: wrap; justify-content: center;
+  max-width: 90%;
+  padding: 6px 8px; border-radius: 12px;
+  background: rgba(13, 13, 13, 0.72); backdrop-filter: blur(6px);
 }
 #gallery-strip img {
   width: 52px; height: 52px; object-fit: cover;
@@ -465,7 +468,8 @@ body.staged .brand { cursor: pointer; }
 }
 
 /* findings column */
-#findings-panel { min-width: 0; }
+#findings-panel { min-width: 0; padding: 74px 28px 190px 24px; }
+#findings-panel #brand-card, #findings-panel #what-card { margin-bottom: 10px; }
 
 /* ---------- the report card ---------- */
 #grade-card {
@@ -696,7 +700,10 @@ body.staged #hat-layer { display: none; } /* hats stay on the homepage */
 .pile-hat.grabbed { cursor: grabbing; }
 
 @media (max-width: 760px) {
-  #stage { grid-template-columns: 1fr; padding-top: 64px; }
-  .stage-left { position: static; }
-  #ad-img { max-height: 48vh; }
+  #stage { grid-template-columns: 1fr; padding-top: 56px; }
+  .stage-left { position: static; height: auto; }
+  #frame { height: auto; }
+  #ad-img { height: auto; max-height: 52vh; }
+  #gallery-strip { position: static; transform: none; margin: 8px auto 0; background: none; }
+  #findings-panel { padding: 16px 16px 190px; }
 }
