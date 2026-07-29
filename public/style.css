@@ -124,6 +124,7 @@ body.staged .brand { cursor: pointer; }
 #bar-fill {
   position: absolute; left: 0; top: 0; bottom: 0;
   width: 0%; z-index: 0 !important;
+  pointer-events: none; /* decorative — never steal the cursor from the sphere */
   background: linear-gradient(90deg, #2445c4, #3562ff);
   border-radius: 999px 0 0 999px; /* flat vertical leading edge; the pill clips it at 100% */
   opacity: 0;
