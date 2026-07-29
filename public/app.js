@@ -240,6 +240,7 @@ function enterStage() {
   show($("tray"));
   show($("btn-restart"));
   document.body.classList.add("staged");
+  window.scrollTo(0, 0); // the stage always opens at the top
 }
 
 function resetToEntry() {

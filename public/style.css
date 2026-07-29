@@ -268,19 +268,15 @@ body.staged .brand { cursor: pointer; }
 
 /* ---------- stage: framed ad module left, findings right ---------- */
 #stage {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(380px, 42%);
-  gap: 0;
   padding: 0;
   max-width: none;
   margin: 0;
-  align-items: start;
 }
-/* the work fills the left pane edge to edge and stays put while the
-   findings column scrolls */
+/* the work owns the left half of the browser — never more — and stays
+   pinned for the whole scroll while the findings column moves */
 .stage-left {
-  position: sticky; top: 0;
-  height: 100vh;
+  position: fixed; top: 0; left: 0;
+  width: 50%; height: 100vh;
 }
 #frame {
   width: 100%; height: 100%;
@@ -468,7 +464,7 @@ body.staged .brand { cursor: pointer; }
 }
 
 /* findings column */
-#findings-panel { min-width: 0; padding: 74px 28px 190px 24px; }
+#findings-panel { min-width: 0; margin-left: 50%; padding: 74px 28px 190px 24px; }
 #findings-panel #brand-card, #findings-panel #what-card { margin-bottom: 10px; }
 
 /* ---------- the report card ---------- */
@@ -588,7 +584,8 @@ body.staged .brand { cursor: pointer; }
 
 /* ---------- tray ---------- */
 #tray {
-  position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 30;
+  /* floats over the findings column only, leaving the work unobstructed */
+  position: fixed; left: calc(50% + 16px); right: 16px; bottom: 16px; z-index: 30;
   background: rgba(23, 23, 23, 0.92);
   backdrop-filter: blur(18px);
   border: 1px solid var(--line);
@@ -700,10 +697,12 @@ body.staged #hat-layer { display: none; } /* hats stay on the homepage */
 .pile-hat.grabbed { cursor: grabbing; }
 
 @media (max-width: 760px) {
-  #stage { grid-template-columns: 1fr; padding-top: 56px; }
-  .stage-left { position: static; height: auto; }
+  #stage { padding-top: 56px; }
+  .stage-left { position: static; width: 100%; height: auto; }
+  #findings-panel { margin-left: 0; }
   #frame { height: auto; }
   #ad-img { height: auto; max-height: 52vh; }
   #gallery-strip { position: static; transform: none; margin: 8px auto 0; background: none; }
   #findings-panel { padding: 16px 16px 190px; }
+  #tray { left: 16px; }
 }
