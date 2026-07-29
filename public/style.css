@@ -208,8 +208,10 @@ body.staged .brand { cursor: pointer; }
 .eye.photo .glint { opacity: 0; }   /* hidden until the blue sphere needs its shine */
 .eye.photo + .veins, .eye.photo .veins { mix-blend-mode: multiply; }
 
-/* tiny thumbnail of the dropped image, shown while the eye reads it */
+/* tiny thumbnail of the dropped image — it takes the plus button's seat
+   while present; canceling brings the plus back */
 #thumb-wrap { position: relative; flex: none; display: block; animation: rise 0.25s ease both; }
+#dropzone:has(#thumb-wrap:not(.hidden)) #btn-upload { display: none; }
 #entry-thumb {
   width: 28px; height: 28px; display: block;
   border-radius: 8px; object-fit: cover;
@@ -228,15 +230,15 @@ body.staged .brand { cursor: pointer; }
 #thumb-x:hover { transform: scale(1.2); }
 
 /* eye states: while loading, the bar itself shows progress and the eye just
-   watches; at 100% the iris rolls up while blue floods up from the bottom,
-   resolving into a solid shiny blue sphere. */
+   watches; at 100% the iris rolls up while black floods up from the bottom,
+   resolving into a glossy black sphere that pops against the filled blue bar. */
 .eye-btn { position: relative; z-index: 2; }
 .eye-btn .eye { transition: transform 0.25s ease, box-shadow 0.3s ease; }
 .veins { display: none; }
 .blue-rise {
   position: absolute; inset: 0; border-radius: 50%;
   background: radial-gradient(circle at 32% 26%,
-    #a9c2ff 0%, #5c86ff 32%, #3562ff 62%, #1e3fc0 100%);
+    #4d4d4d 0%, #262626 34%, #101010 64%, #000 100%);
   transform: translateY(103%);
   transition: transform 0.55s cubic-bezier(0.33, 1, 0.68, 1);
 }
@@ -247,9 +249,9 @@ body.staged .brand { cursor: pointer; }
 }
 .eye-btn.done .eye {
   box-shadow:
-    inset -3px -5px 9px rgba(10, 20, 80, 0.45),
-    inset 2px 3px 6px rgba(255, 255, 255, 0.35),
-    0 0 22px -4px rgba(53, 98, 255, 0.7);
+    inset -3px -5px 9px rgba(0, 0, 0, 0.65),
+    inset 2px 3px 6px rgba(255, 255, 255, 0.2),
+    0 2px 12px rgba(0, 0, 0, 0.55);
 }
 .eye-btn.done .glint {
   display: block; opacity: 1;
