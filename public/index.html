@@ -69,18 +69,6 @@
 <!-- Screen 2 · stage: framed ad left, findings right -->
 <section id="stage" class="hidden">
   <div class="stage-left">
-    <div id="frame"><img id="ad-img" alt="The work being analyzed"></div>
-    <div id="gallery-strip" class="hidden"></div>
-    <div id="what-card" class="hidden">
-      <div class="what-top">
-        <span class="what-label">What this is</span>
-        <span class="type-wrap">
-          <button id="what-type" title="Wrong? Click to correct it"></button>
-          <div id="type-menu" class="hidden"></div>
-        </span>
-      </div>
-      <p id="what-desc"></p>
-    </div>
     <div id="brand-card" class="hidden">
       <button class="brand-head" id="brand-head">
         <img id="brand-logo" alt="">
@@ -92,16 +80,28 @@
       </button>
       <div class="brand-bio"><p id="brand-bio-text"></p></div>
     </div>
+    <div id="what-card" class="hidden">
+      <div class="what-top">
+        <span class="what-label">What this is</span>
+        <span class="type-wrap">
+          <button id="what-type" title="Wrong? Click to correct it"></button>
+          <div id="type-menu" class="hidden"></div>
+        </span>
+      </div>
+      <p id="what-desc"></p>
+    </div>
+    <div id="frame"><img id="ad-img" alt="The work being analyzed"></div>
+    <div id="gallery-strip" class="hidden"></div>
+  </div>
+
+  <aside id="findings-panel" class="hidden">
+    <div id="grade-card" class="hidden"></div>
     <div id="overall" class="hidden">
       <p class="overall-label">Overall read</p>
       <p id="overall-text"></p>
       <p id="sharpen-note" class="hidden"></p>
       <p id="routing-note" class="hidden"></p>
     </div>
-  </div>
-
-  <aside id="findings-panel" class="hidden">
-    <div id="grade-card" class="hidden"></div>
     <p class="panel-label" id="panel-label">Why this works</p>
     <div id="findings"></div>
     <button id="btn-analyze-result" class="ghost-btn hidden">Break down why this works</button>
