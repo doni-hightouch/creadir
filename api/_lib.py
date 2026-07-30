@@ -136,21 +136,41 @@ def openai_generate_image(prompt, size):
 # Activated automatically once ANTHROPIC_API_KEY is present.
 
 
-def anthropic_chat(system, user_content, want_json=True):
+ANTHROPIC_MODEL = "claude-opus-5"
+
+
+def anthropic_chat(system, user_content):
+    """One Claude call. Raw HTTP because this project ships without pip installs.
+
+    Opus 5 thinks by default, and thinking shares the max_tokens budget with the
+    reply — hence the generous ceiling; a cramped one truncates the JSON. The
+    reply is read from the text block, so the thinking blocks ahead of it are
+    skipped. `fallbacks` lets a policy refusal be re-served by another model
+    instead of failing the request outright.
+    """
     payload = {
-        "model": "claude-opus-5",
-        "max_tokens": 4096,
+        "model": ANTHROPIC_MODEL,
+        "max_tokens": 16000,
         "system": system,
         "messages": [{"role": "user", "content": user_content}],
+        "fallbacks": "default",
     }
     out = post_json(
         "https://api.anthropic.com/v1/messages",
         payload,
-        {"x-api-key": key("ANTHROPIC_API_KEY"), "anthropic-version": "2023-06-01"},
+        {"x-api-key": key("ANTHROPIC_API_KEY"),
+         "anthropic-version": "2023-06-01",
+         "anthropic-beta": "server-side-fallback-2026-07-01"},
     )
-    if out.get("stop_reason") == "refusal":
-        raise RuntimeError("analysis request was declined; try a different image")
-    return next(b["text"] for b in out["content"] if b["type"] == "text")
+    stop = out.get("stop_reason")
+    if stop == "refusal":
+        raise RuntimeError("Claude declined to judge that one — try a different image")
+    if stop == "max_tokens":
+        raise RuntimeError("the read ran long and got cut off — try again")
+    try:
+        return next(b["text"] for b in out.get("content", []) if b.get("type") == "text")
+    except StopIteration:
+        raise RuntimeError("Claude returned no text to read")
 
 
 
