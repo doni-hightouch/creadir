@@ -22,6 +22,48 @@ Copy `.env.example` to `.env` and fill in:
   compiling) switches to Claude automatically.
 - `BFL_API_KEY`, `IDEOGRAM_API_KEY` — placeholders for the multi-model router
   (Flux for photorealism, Ideogram for type-led work). Not wired up yet.
+- `GOOGLE_CLIENT_ID` — required for sign-in. See below.
+- `SESSION_SECRET` — required for sign-in. Any long random string; it signs the
+  session cookie. Rotating it signs everyone out.
+- `AUTH_DEV_BYPASS` — local development escape hatch. `1` skips sign-in
+  entirely. Never set this on the deployment.
+
+## Sign-in
+
+Creadir is gated to **@hightouch.io** Google accounts. Everything under `/api`
+returns 401 without a valid session, and the browser shows a sign-in screen
+before any of the app renders.
+
+How it works: the browser gets a Google ID token, `POST /api/auth` verifies it
+against Google's tokeninfo endpoint (so no crypto libraries are needed), then
+checks the audience, the issuer, the verified-email flag, and that the address
+ends in `@hightouch.io`. On success the server sets an HMAC-signed,
+HttpOnly, Secure, SameSite=Lax cookie good for 30 days.
+
+It fails closed: if `GOOGLE_CLIENT_ID` or `SESSION_SECRET` is missing, every
+endpoint returns 503 rather than letting anyone in.
+
+**One-time Google setup** (needed before anyone can sign in):
+
+1. Go to <https://console.cloud.google.com/apis/credentials>.
+2. **Create credentials → OAuth client ID → Web application.**
+3. Under **Authorized JavaScript origins** add `https://creadir.vercel.app`
+   (and `http://localhost:8787` if you want to sign in locally too).
+4. Copy the client ID (it ends in `.apps.googleusercontent.com`) and set it as
+   `GOOGLE_CLIENT_ID` in the Vercel project's environment variables, then
+   redeploy. Add it to local `.env` as well for local sign-in.
+
+No client secret is needed — this is the browser-side ID-token flow.
+
+## Who has signed in
+
+Every sign-in appends a private record to Vercel Blob under `logins/`. Nothing
+on the website exposes it. To read it:
+
+```
+python3 users.py            # one line per person
+python3 users.py --events   # every individual sign-in
+```
 
 ## How it thinks
 

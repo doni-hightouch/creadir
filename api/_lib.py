@@ -1026,6 +1026,189 @@ def gallery():
     return {"items": items[:GALLERY_LIMIT]}
 
 
+# ---------- auth: Google sign-in, restricted to one email domain ----------
+# Google verifies the ID token's signature for us via its tokeninfo endpoint,
+# which keeps this stdlib-only. We still check the audience, the issuer, and
+# the email domain ourselves. Sessions are HMAC-signed cookies.
+
+ALLOWED_DOMAIN = "hightouch.io"
+SESSION_DAYS = 30
+TOKENINFO = "https://oauth2.googleapis.com/tokeninfo?id_token="
+
+
+def _b64u(raw):
+    import base64
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def _unb64u(text):
+    import base64
+    pad = "=" * (-len(text) % 4)
+    return base64.urlsafe_b64decode(text + pad)
+
+
+def email_domain(email):
+    return (email or "").strip().lower().rpartition("@")[2]
+
+
+def _hmac(payload):
+    import hashlib
+    import hmac
+    secret = key("SESSION_SECRET")
+    if not secret:
+        raise RuntimeError("SESSION_SECRET is not configured")
+    return hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+
+
+def make_session(email):
+    import time
+    exp = int(time.time()) + SESSION_DAYS * 86400
+    payload = "%s|%d" % (email.lower(), exp)
+    return "%s.%s" % (_b64u(payload.encode()), _hmac(payload))
+
+
+def read_session(token):
+    """Return the email a session token vouches for, or None if it doesn't."""
+    import hmac
+    import time
+    try:
+        body, _, sig = (token or "").strip().partition(".")
+        payload = _unb64u(body).decode()
+        if not hmac.compare_digest(sig, _hmac(payload)):
+            return None
+        email, _, exp = payload.rpartition("|")
+        if int(exp) < int(time.time()):
+            return None
+        if email_domain(email) != ALLOWED_DOMAIN:  # domain rules changed since issue
+            return None
+        return email
+    except Exception:
+        return None
+
+
+def session_from_cookies(cookie_header):
+    for part in (cookie_header or "").split(";"):
+        name, _, value = part.strip().partition("=")
+        if name == "cd_session":
+            return read_session(value)
+    return None
+
+
+def cookie_header(token, secure=True):
+    bits = ["cd_session=" + token, "Path=/", "HttpOnly", "SameSite=Lax",
+            "Max-Age=%d" % (SESSION_DAYS * 86400)]
+    if secure:
+        bits.append("Secure")
+    return "; ".join(bits)
+
+
+def clear_cookie(secure=True):
+    bits = ["cd_session=", "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=0"]
+    if secure:
+        bits.append("Secure")
+    return "; ".join(bits)
+
+
+def auth_gate(headers):
+    """None when the caller may use the API, else (status, body) to return."""
+    if key("AUTH_DEV_BYPASS") == "1":
+        return None  # local development only; never set on the deployment
+    if not key("GOOGLE_CLIENT_ID") or not key("SESSION_SECRET"):
+        return (503, {"error": "sign-in isn't configured on this deployment"})
+    try:
+        cookies = headers.get("Cookie") or headers.get("cookie") or ""
+    except AttributeError:
+        cookies = ""
+    if not session_from_cookies(cookies):
+        return (401, {"error": "sign in with your Hightouch account to continue"})
+    return None
+
+
+def sign_in(credential):
+    """Verify a Google ID token, enforce the domain, log it, return a session."""
+    client_id = key("GOOGLE_CLIENT_ID")
+    if not client_id:
+        raise RuntimeError("GOOGLE_CLIENT_ID is not configured")
+    if not credential:
+        raise RuntimeError("missing Google credential")
+    req = urllib.request.Request(TOKENINFO + urllib.parse.quote(credential))
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            claims = json.loads(r.read().decode())
+    except urllib.error.HTTPError:
+        raise RuntimeError("that Google sign-in couldn't be verified — try again")
+    if claims.get("aud") != client_id:
+        raise RuntimeError("that sign-in was issued for a different app")
+    if claims.get("iss") not in ("accounts.google.com", "https://accounts.google.com"):
+        raise RuntimeError("unexpected token issuer")
+    if str(claims.get("email_verified")).lower() not in ("true", "1"):
+        raise RuntimeError("that Google account has no verified email")
+    email = (claims.get("email") or "").strip().lower()
+    if email_domain(email) != ALLOWED_DOMAIN:
+        raise RuntimeError("Creadir is limited to @%s accounts" % ALLOWED_DOMAIN)
+    name = claims.get("name") or ""
+    log_login(email, name)
+    return {"email": email, "name": name, "picture": claims.get("picture") or "",
+            "session": make_session(email)}
+
+
+def log_login(email, name):
+    """Append-only private login record in blob storage. Never served publicly."""
+    token = key("BLOB_READ_WRITE_TOKEN")
+    if not token:
+        return
+    import datetime
+    import time
+    try:
+        stamp = datetime.datetime.utcnow().isoformat() + "Z"
+        safe = re.sub(r"[^a-z0-9._-]", "_", email)
+        _blob_put("logins/%d-%s.json" % (int(time.time() * 1000), safe),
+                  json.dumps({"email": email, "name": name, "at": stamp}).encode(),
+                  "application/json", token)
+    except Exception:
+        pass  # a logging failure must never block a legitimate sign-in
+
+
+def login_log():
+    """Every recorded sign-in plus a per-person roll-up. For the owner's eyes."""
+    if not key("BLOB_READ_WRITE_TOKEN"):
+        return {"people": [], "events": []}
+    events = []
+    for b in _blob_list("logins/"):
+        try:
+            with urllib.request.urlopen(b["url"], timeout=20) as r:
+                events.append(json.loads(r.read().decode()))
+        except Exception:
+            continue
+    events.sort(key=lambda e: e.get("at") or "")
+    people = {}
+    for e in events:
+        p = people.setdefault(e.get("email", "?"), {
+            "email": e.get("email", "?"), "name": e.get("name") or "",
+            "first_seen": e.get("at"), "last_seen": e.get("at"), "logins": 0})
+        p["logins"] += 1
+        p["last_seen"] = e.get("at")
+        if e.get("name"):
+            p["name"] = e["name"]
+    return {"people": sorted(people.values(), key=lambda p: p["last_seen"] or "",
+                             reverse=True),
+            "events": events}
+
+
+def me(headers):
+    """What the browser needs on boot: who you are, or how to sign in."""
+    try:
+        cookies = headers.get("Cookie") or headers.get("cookie") or ""
+    except AttributeError:
+        cookies = ""
+    email = session_from_cookies(cookies)
+    if key("AUTH_DEV_BYPASS") == "1" and not email:
+        email = "dev@" + ALLOWED_DOMAIN
+    return {"authenticated": bool(email), "email": email or "",
+            "client_id": key("GOOGLE_CLIENT_ID") or "",
+            "domain": ALLOWED_DOMAIN}
+
+
 def status():
     return {
         "openai": bool(key("OPENAI_API_KEY")),

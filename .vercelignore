@@ -2,4 +2,5 @@
 .env.*
 knowledge/
 server.py
+users.py
 README.md

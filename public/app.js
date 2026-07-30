@@ -44,6 +44,7 @@ async function api(path, body, signal) {
     signal,
   });
   const data = await res.json();
+  if (res.status === 401) { lock("Your session expired. Sign in again."); }
   if (!res.ok) throw new Error(data.error || "request failed");
   return data;
 }
@@ -746,12 +747,103 @@ $("fb-send").addEventListener("click", async () => {
   }
 });
 
+// ---------- sign-in gate ----------
+// The gate is in the markup already, so the app never flashes before auth.
+function gateStatus(msg, isError) {
+  const el = $("gate-status");
+  el.textContent = msg || "";
+  el.classList.toggle("error", !!isError);
+  show(el, !!msg);
+}
+
+function lock(msg) {
+  show($("gate"));
+  show($("btn-signout"), false);
+  gateStatus(msg || "", !!msg);
+}
+
+function unlock(me) {
+  show($("gate"), false);
+  const out = $("btn-signout");
+  out.title = "Sign out of " + (me.email || "Creadir");
+  show(out);
+  fetch("/api/status")
+    .then((r) => r.json())
+    .then((s) => { if (!s.openai) toast("No OPENAI_API_KEY configured", true); })
+    .catch(() => {});
+  loadRecent();
+  input.focus();
+}
+
+// Google's script loads async and fires no ready event, so watch for it.
+function whenGoogleReady(cb, waited = 0) {
+  if (window.google && window.google.accounts && window.google.accounts.id) return cb();
+  if (waited > 8000) {
+    gateStatus("Google sign-in didn't load. Check your connection and reload.", true);
+    return;
+  }
+  setTimeout(() => whenGoogleReady(cb, waited + 100), 100);
+}
+
+async function onCredential(response) {
+  gateStatus("Signing you in…");
+  try {
+    const res = await fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ credential: response.credential }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "sign-in failed");
+    gateStatus("");
+    unlock(data);
+  } catch (err) {
+    gateStatus(err.message, true);
+  }
+}
+
+function renderSignIn(me) {
+  if (!me.client_id) {
+    gateStatus("Sign-in isn't configured on this deployment yet.", true);
+    return;
+  }
+  whenGoogleReady(() => {
+    google.accounts.id.initialize({
+      client_id: me.client_id,
+      callback: onCredential,
+      auto_select: false,
+      cancel_on_tap_outside: true,
+    });
+    google.accounts.id.renderButton($("gate-btn"), {
+      theme: "filled_black", size: "large", shape: "pill",
+      text: "signin_with", logo_alignment: "center", width: 260,
+    });
+    gateStatus("");
+  });
+}
+
+$("btn-signout").addEventListener("click", async () => {
+  try {
+    await fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "signout" }),
+    });
+    if (window.google && google.accounts) google.accounts.id.disableAutoSelect();
+  } catch { /* signing out locally is what matters */ }
+  location.reload();
+});
+
 // ---------- boot ----------
-fetch("/api/status")
-  .then((r) => r.json())
-  .then((s) => {
-    if (!s.openai) toast("No OPENAI_API_KEY configured", true);
-  })
-  .catch(() => {});
-loadRecent();
-input.focus();
+(async function boot() {
+  let me = { authenticated: false, client_id: "" };
+  try {
+    me = await fetch("/api/me", { cache: "no-store" }).then((r) => r.json());
+  } catch {
+    gateStatus("Couldn't reach the server. Reload to try again.", true);
+    return;
+  }
+  if (me.authenticated) { unlock(me); return; }
+  lock();
+  renderSignIn(me);
+})();

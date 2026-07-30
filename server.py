@@ -23,11 +23,13 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         print("%s %s" % (self.command, self.path))
 
-    def _send(self, code, body, ctype="application/json"):
+    def _send(self, code, body, ctype="application/json", cookie=None):
         data = body if isinstance(body, bytes) else json.dumps(body).encode()
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
+        if cookie:
+            self.send_header("Set-Cookie", cookie)
         self.end_headers()
         self.wfile.write(data)
 
@@ -36,7 +38,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/status":
             self._send(200, _lib.status())
             return
+        if path == "/api/me":
+            self._send(200, _lib.me(self.headers))
+            return
         if path == "/api/gallery":
+            gate = _lib.auth_gate(self.headers)
+            if gate:
+                self._send(*gate)
+                return
             try:
                 self._send(200, _lib.gallery())
             except Exception as e:
@@ -68,6 +77,23 @@ class Handler(BaseHTTPRequestHandler):
             for k, v in body.items()
         }
         print("POST %s %s" % (self.path, json.dumps(summary)))
+        if self.path == "/api/auth":
+            try:
+                if body.get("action") == "signout":
+                    self._send(200, {"authenticated": False},
+                               cookie=_lib.clear_cookie(secure=False))
+                else:
+                    res = _lib.sign_in(body.get("credential"))
+                    token = res.pop("session")  # stays in the cookie, never the body
+                    self._send(200, {"authenticated": True, **res},
+                               cookie=_lib.cookie_header(token, secure=False))
+            except Exception as e:
+                self._send(403, {"error": str(e)})
+            return
+        gate = _lib.auth_gate(self.headers)
+        if gate:
+            self._send(*gate)
+            return
         try:
             if self.path == "/api/analyze":
                 self._send(200, _lib.analyze(body.get("images") or body["image"], body.get("context"), body.get("force_category")))
