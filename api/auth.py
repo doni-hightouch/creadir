@@ -17,7 +17,7 @@ class handler(BaseHTTPRequestHandler):
                 code, out = 200, {"authenticated": False}
                 cookie = _lib.clear_cookie()
             else:
-                res = _lib.sign_in(body.get("credential"))
+                res = _lib.sign_in(body)
                 cookie = _lib.cookie_header(res.pop("session"))
                 code, out = 200, {"authenticated": True, **res}
         except Exception as e:

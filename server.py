@@ -83,7 +83,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(200, {"authenticated": False},
                                cookie=_lib.clear_cookie(secure=False))
                 else:
-                    res = _lib.sign_in(body.get("credential"))
+                    res = _lib.sign_in(body)
                     token = res.pop("session")  # stays in the cookie, never the body
                     self._send(200, {"authenticated": True, **res},
                                cookie=_lib.cookie_header(token, secure=False))

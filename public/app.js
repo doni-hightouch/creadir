@@ -777,7 +777,7 @@ function unlock(me) {
 
 // Google's script loads async and fires no ready event, so watch for it.
 function whenGoogleReady(cb, waited = 0) {
-  if (window.google && window.google.accounts && window.google.accounts.id) return cb();
+  if (window.google && window.google.accounts && window.google.accounts.oauth2) return cb();
   if (waited > 8000) {
     gateStatus("Google sign-in didn't load. Check your connection and reload.", true);
     return;
@@ -785,13 +785,15 @@ function whenGoogleReady(cb, waited = 0) {
   setTimeout(() => whenGoogleReady(cb, waited + 100), 100);
 }
 
-async function onCredential(response) {
+async function exchangeToken(accessToken) {
+  const btn = $("gate-btn");
+  btn.disabled = true;
   gateStatus("Signing you in…");
   try {
     const res = await fetch("/api/auth", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ credential: response.credential }),
+      body: JSON.stringify({ access_token: accessToken }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "sign-in failed");
@@ -799,25 +801,39 @@ async function onCredential(response) {
     unlock(data);
   } catch (err) {
     gateStatus(err.message, true);
+  } finally {
+    btn.disabled = false;
   }
 }
 
+// Our own button drives Google's token flow in a popup, so the whole control
+// is ours to style — Google's rendered button is an iframe we can't touch.
 function renderSignIn(me) {
   if (!me.client_id) {
     gateStatus("Sign-in isn't configured on this deployment yet.", true);
     return;
   }
   whenGoogleReady(() => {
-    google.accounts.id.initialize({
+    const client = google.accounts.oauth2.initTokenClient({
       client_id: me.client_id,
-      callback: onCredential,
-      auto_select: false,
-      cancel_on_tap_outside: true,
+      scope: "openid email profile",
+      callback: (resp) => {
+        if (resp && resp.access_token) exchangeToken(resp.access_token);
+        else gateStatus("Sign-in was cancelled.", true);
+      },
+      error_callback: (err) => {
+        const why = err && err.type === "popup_closed"
+          ? "Sign-in window closed before finishing."
+          : "Sign-in couldn't start. Allow pop-ups for this site and retry.";
+        gateStatus(why, true);
+      },
     });
-    google.accounts.id.renderButton($("gate-btn"), {
-      theme: "filled_black", size: "large", shape: "pill",
-      text: "signin_with", logo_alignment: "center", width: 260,
+    const btn = $("gate-btn");
+    btn.addEventListener("click", () => {
+      gateStatus("");
+      client.requestAccessToken();
     });
+    show(btn);
     gateStatus("");
   });
 }
@@ -829,7 +845,7 @@ $("btn-signout").addEventListener("click", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "signout" }),
     });
-    if (window.google && google.accounts) google.accounts.id.disableAutoSelect();
+    // no Google state to clear with the token flow — our cookie is the session
   } catch { /* signing out locally is what matters */ }
   location.reload();
 });

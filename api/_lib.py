@@ -1033,7 +1033,7 @@ def gallery():
 
 ALLOWED_DOMAIN = "hightouch.io"
 SESSION_DAYS = 30
-TOKENINFO = "https://oauth2.googleapis.com/tokeninfo?id_token="
+TOKENINFO = "https://oauth2.googleapis.com/tokeninfo?"
 
 
 def _b64u(raw):
@@ -1124,22 +1124,36 @@ def auth_gate(headers):
     return None
 
 
-def sign_in(credential):
-    """Verify a Google ID token, enforce the domain, log it, return a session."""
+def sign_in(payload):
+    """Verify a Google token, enforce the domain, log it, hand back a session.
+
+    Accepts either an access token (our own sign-in button, via Google's token
+    flow) or an ID token (Google's rendered button). Google validates the token
+    itself at the tokeninfo endpoint, which keeps this stdlib-only; we then
+    check that it was minted for *this* app and that the address is in-domain.
+    """
     client_id = key("GOOGLE_CLIENT_ID")
     if not client_id:
         raise RuntimeError("GOOGLE_CLIENT_ID is not configured")
-    if not credential:
+    access_token = (payload or {}).get("access_token")
+    credential = (payload or {}).get("credential")
+    if access_token:
+        query = "access_token=" + urllib.parse.quote(access_token)
+    elif credential:
+        query = "id_token=" + urllib.parse.quote(credential)
+    else:
         raise RuntimeError("missing Google credential")
-    req = urllib.request.Request(TOKENINFO + urllib.parse.quote(credential))
     try:
-        with urllib.request.urlopen(req, timeout=20) as r:
+        with urllib.request.urlopen(urllib.request.Request(TOKENINFO + query),
+                                    timeout=20) as r:
             claims = json.loads(r.read().decode())
     except urllib.error.HTTPError:
         raise RuntimeError("that Google sign-in couldn't be verified — try again")
+    # Without this check a token minted for any other Google app would pass.
     if claims.get("aud") != client_id:
         raise RuntimeError("that sign-in was issued for a different app")
-    if claims.get("iss") not in ("accounts.google.com", "https://accounts.google.com"):
+    if credential and claims.get("iss") not in (
+            "accounts.google.com", "https://accounts.google.com"):
         raise RuntimeError("unexpected token issuer")
     if str(claims.get("email_verified")).lower() not in ("true", "1"):
         raise RuntimeError("that Google account has no verified email")
@@ -1148,8 +1162,7 @@ def sign_in(credential):
         raise RuntimeError("Creadir is limited to @%s accounts" % ALLOWED_DOMAIN)
     name = claims.get("name") or ""
     log_login(email, name)
-    return {"email": email, "name": name, "picture": claims.get("picture") or "",
-            "session": make_session(email)}
+    return {"email": email, "name": name, "session": make_session(email)}
 
 
 def log_login(email, name):
