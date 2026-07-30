@@ -112,6 +112,7 @@ def openai_chat(messages, want_json=True):
         if not retried:
             raise
         out = post_json("https://api.openai.com/v1/chat/completions", payload, headers)
+    meter_add_tokens("_openai_text", out.get("usage"))
     return out["choices"][0]["message"]["content"]
 
 
@@ -129,6 +130,7 @@ def openai_generate_image(prompt, size):
         {"Authorization": "Bearer " + key("OPENAI_API_KEY")},
         timeout=300,
     )
+    meter_add_usd(IMAGE_COST_USD)
     return "data:image/png;base64," + out["data"][0]["b64_json"]
 
 
@@ -162,6 +164,7 @@ def anthropic_chat(system, user_content):
          "anthropic-version": "2023-06-01",
          "anthropic-beta": "server-side-fallback-2026-07-01"},
     )
+    meter_add_tokens(ANTHROPIC_MODEL, out.get("usage"))
     stop = out.get("stop_reason")
     if stop == "refusal":
         raise RuntimeError("Claude declined to judge that one — try a different image")
@@ -1226,6 +1229,244 @@ def login_log():
     return {"people": sorted(people.values(), key=lambda p: p["last_seen"] or "",
                              reverse=True),
             "events": events}
+
+
+# ---------- spend metering and per-person monthly budgets ----------
+# Metered in dollars, not tokens: image generation isn't priced per token, and
+# input vs output tokens cost 5x differently, so a token count wouldn't map to
+# what you actually care about. Every provider call adds its cost to a
+# per-request meter; the total is banked against the caller's month.
+
+ADMIN_EMAIL = "doni@hightouch.io"
+ADMIN_MONTHLY_USD = 500.0      # you
+DEFAULT_MONTHLY_USD = 5.0      # everyone else, until you raise it
+
+# $ per million tokens. Claude rates are current; the OpenAI ones are only
+# reached if ANTHROPIC_API_KEY is ever removed.
+TOKEN_RATES = {
+    "claude-opus-5": (5.0, 25.0),
+    "_openai_text": (1.25, 10.0),
+}
+# gpt-image-1 bills per image, not per token. ESTIMATE — confirm against your
+# OpenAI dashboard and adjust; it is deliberately rounded up so a wrong guess
+# under-spends rather than over-spends.
+IMAGE_COST_USD = 0.08
+
+_meter = __import__("threading").local()
+
+
+def meter_reset():
+    _meter.usd = 0.0
+    _meter.tokens = 0
+
+
+def meter_add_tokens(rate_key, usage):
+    """Bank one provider reply. Accepts either provider's usage shape."""
+    if not usage:
+        return
+    rate_in, rate_out = TOKEN_RATES.get(rate_key, (0.0, 0.0))
+    # Anthropic: input_tokens / output_tokens. OpenAI: prompt_ / completion_.
+    tin = usage.get("input_tokens") or usage.get("prompt_tokens") or 0
+    tout = usage.get("output_tokens") or usage.get("completion_tokens") or 0
+    # Cached reads are billed at a fraction, but counting them at full rate
+    # only makes the guard more conservative.
+    usd = (tin * rate_in + tout * rate_out) / 1_000_000.0
+    _meter.usd = getattr(_meter, "usd", 0.0) + usd
+    _meter.tokens = getattr(_meter, "tokens", 0) + tin + tout
+
+
+def meter_add_usd(usd):
+    _meter.usd = getattr(_meter, "usd", 0.0) + usd
+
+
+def meter_total():
+    return round(getattr(_meter, "usd", 0.0), 6), getattr(_meter, "tokens", 0)
+
+
+def _month():
+    import datetime
+    return datetime.datetime.utcnow().strftime("%Y-%m")
+
+
+def _safe_email(email):
+    return re.sub(r"[^a-z0-9._-]", "_", (email or "unknown").lower())
+
+
+def _blob_versions(pathname):
+    """Every stored version of one exact pathname, newest last.
+
+    Never pass a full pathname to _blob_list as the prefix: the stored key has a
+    random suffix inserted before the extension, so a prefix ending in '.json'
+    matches nothing even though the reported pathname is clean. List the parent
+    folder and compare pathnames here instead.
+    """
+    parent = pathname.rsplit("/", 1)[0] + "/" if "/" in pathname else ""
+    found = [b for b in _blob_list(parent) if b.get("pathname") == pathname]
+    return sorted(found, key=lambda b: b.get("uploadedAt") or "")
+
+
+def _blob_read_json(pathname):
+    """Newest version of one JSON blob, or None. Blob URLs are per-version."""
+    if not key("BLOB_READ_WRITE_TOKEN"):
+        return None
+    try:
+        versions = _blob_versions(pathname)
+        if not versions:
+            return None
+        with urllib.request.urlopen(versions[-1]["url"], timeout=20) as r:
+            return json.loads(r.read().decode())
+    except Exception:
+        return None
+
+
+def _blob_write_json(pathname, obj):
+    token = key("BLOB_READ_WRITE_TOKEN")
+    if not token:
+        return
+    stale = _blob_versions(pathname)
+    _blob_put(pathname, json.dumps(obj).encode(), "application/json", token)
+    if stale:
+        try:
+            req = urllib.request.Request(
+                BLOB_API + "/delete",
+                data=json.dumps({"urls": [b["url"] for b in stale]}).encode(),
+                method="POST",
+                headers={"Authorization": "Bearer " + token,
+                         "Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=20).read()
+        except Exception:
+            pass
+
+
+def budget_for(email):
+    """Monthly allowance in dollars: the default, or whatever you've set,
+    plus any one-off grant you approved for the current month."""
+    email = (email or "").lower()
+    base = ADMIN_MONTHLY_USD if email == ADMIN_EMAIL else DEFAULT_MONTHLY_USD
+    limits = _blob_read_json("limits/%s.json" % _safe_email(email)) or {}
+    if isinstance(limits.get("monthly_usd"), (int, float)):
+        base = float(limits["monthly_usd"])
+    grant = (limits.get("grants") or {}).get(_month()) or 0
+    try:
+        base += float(grant)
+    except (TypeError, ValueError):
+        pass
+    return base
+
+
+def spend_this_month(email):
+    rec = _blob_read_json("usage/%s/%s.json" % (_safe_email(email), _month())) or {}
+    try:
+        return float(rec.get("usd") or 0.0), int(rec.get("calls") or 0), int(rec.get("tokens") or 0)
+    except (TypeError, ValueError):
+        return 0.0, 0, 0
+
+
+def budget_gate(email):
+    """None when the caller has room left, else (status, body) to return."""
+    if key("AUTH_DEV_BYPASS") == "1":
+        return None
+    if not key("BLOB_READ_WRITE_TOKEN"):
+        return None  # nowhere to meter; don't lock the app out over it
+    allowance = budget_for(email)
+    spent, _, _ = spend_this_month(email)
+    if spent < allowance:
+        return None
+    return (402, {
+        "error": "You've used this month's $%.2f allowance on Creadir. "
+                 "Ask Doni to approve more and it'll unlock right away."
+                 % allowance,
+        "budget": {"spent_usd": round(spent, 2), "allowance_usd": allowance,
+                   "month": _month(), "exhausted": True},
+    })
+
+
+def record_usage(email, kind):
+    """Bank the current request's metered cost against the caller's month."""
+    usd, tokens = meter_total()
+    if not usd and not tokens:
+        return
+    path = "usage/%s/%s.json" % (_safe_email(email), _month())
+    rec = _blob_read_json(path) or {}
+    try:
+        prev_usd = float(rec.get("usd") or 0.0)
+        prev_calls = int(rec.get("calls") or 0)
+        prev_tokens = int(rec.get("tokens") or 0)
+    except (TypeError, ValueError):
+        prev_usd, prev_calls, prev_tokens = 0.0, 0, 0
+    by_kind = rec.get("by_kind") if isinstance(rec.get("by_kind"), dict) else {}
+    by_kind[kind] = round(float(by_kind.get(kind) or 0.0) + usd, 6)
+    _blob_write_json(path, {
+        "email": (email or "").lower(),
+        "month": _month(),
+        "usd": round(prev_usd + usd, 6),
+        "tokens": prev_tokens + tokens,
+        "calls": prev_calls + 1,
+        "by_kind": by_kind,
+    })
+
+
+def usage_report():
+    """Every person's spend this month, against their allowance. Owner's eyes."""
+    if not key("BLOB_READ_WRITE_TOKEN"):
+        return {"month": _month(), "people": []}
+    month = _month()
+    rows = []
+    for b in _blob_list("usage/"):
+        name = b.get("pathname", "")
+        if not name.endswith("/%s.json" % month):
+            continue
+        rec = _blob_read_json(name)
+        if not rec:
+            continue
+        email = rec.get("email") or name.split("/")[1]
+        allowance = budget_for(email)
+        spent = float(rec.get("usd") or 0.0)
+        rows.append({"email": email, "spent_usd": round(spent, 4),
+                     "allowance_usd": allowance,
+                     "left_usd": round(allowance - spent, 4),
+                     "calls": rec.get("calls") or 0,
+                     "tokens": rec.get("tokens") or 0,
+                     "by_kind": rec.get("by_kind") or {}})
+    seen, uniq = set(), []
+    for r in sorted(rows, key=lambda r: -r["spent_usd"]):
+        if r["email"] in seen:
+            continue
+        seen.add(r["email"])
+        uniq.append(r)
+    return {"month": month, "people": uniq}
+
+
+def set_budget(email, monthly_usd):
+    path = "limits/%s.json" % _safe_email(email)
+    cur = _blob_read_json(path) or {}
+    cur["email"] = (email or "").lower()
+    cur["monthly_usd"] = float(monthly_usd)
+    _blob_write_json(path, cur)
+    return budget_for(email)
+
+
+def grant_overage(email, extra_usd):
+    """Approve a one-off top-up for the current month only."""
+    path = "limits/%s.json" % _safe_email(email)
+    cur = _blob_read_json(path) or {}
+    cur["email"] = (email or "").lower()
+    grants = cur.get("grants") if isinstance(cur.get("grants"), dict) else {}
+    grants[_month()] = round(float(grants.get(_month()) or 0.0) + float(extra_usd), 4)
+    cur["grants"] = grants
+    _blob_write_json(path, cur)
+    return budget_for(email)
+
+
+def current_user(headers):
+    try:
+        cookies = headers.get("Cookie") or headers.get("cookie") or ""
+    except AttributeError:
+        cookies = ""
+    email = session_from_cookies(cookies)
+    if not email and key("AUTH_DEV_BYPASS") == "1":
+        return "dev@" + ALLOWED_DOMAIN
+    return email
 
 
 def me(headers):

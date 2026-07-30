@@ -94,6 +94,14 @@ class Handler(BaseHTTPRequestHandler):
         if gate:
             self._send(*gate)
             return
+        email = _lib.current_user(self.headers)
+        spends = self.path in ("/api/analyze", "/api/generate", "/api/compile")
+        if spends:
+            budget = _lib.budget_gate(email)
+            if budget:
+                self._send(*budget)
+                return
+            _lib.meter_reset()
         try:
             if self.path == "/api/analyze":
                 self._send(200, _lib.analyze(body.get("images") or body["image"], body.get("context"), body.get("force_category")))
@@ -111,6 +119,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(404, {"error": "not found"})
         except Exception as e:
             self._send(502, {"error": str(e)})
+        finally:
+            if spends:
+                _lib.record_usage(email, self.path.rsplit("/", 1)[-1])
 
 
 if __name__ == "__main__":

@@ -3,4 +3,5 @@
 knowledge/
 server.py
 users.py
+budget.py
 README.md
