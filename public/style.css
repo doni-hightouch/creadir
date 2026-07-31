@@ -337,19 +337,10 @@ body.staged .brand { cursor: pointer; }
   display: flex; flex-direction: column; align-items: center;
   text-align: center; gap: 0;
 }
-/* the entry headline at hero scale — identical faces, weights, tracking and
-   serif proportion, so the gate mark IS the approved logo, just smaller */
-.gate-mark {
-  font-family: var(--sans);
-  font-size: clamp(52px, 8vw, 82px); font-weight: 700;
-  letter-spacing: -0.045em; line-height: 0.98;
-  color: var(--text);
+/* the hat alone carries the brand here — no wordmark above the sign-in */
+.gate-hat {
+  width: clamp(96px, 14vw, 132px); height: auto;
   margin-bottom: 38px;
-}
-.gate-mark em {
-  font-family: var(--serif); font-style: italic; font-weight: 500;
-  letter-spacing: -0.02em; color: var(--text-2);
-  margin-left: 0.07em;
 }
 
 /* our own sign-in button, so the Google mark sits exactly at the pill's end */
@@ -438,6 +429,20 @@ body.staged .brand { cursor: pointer; }
 }
 .recent-tile:hover { transform: translateY(-2px); border-color: rgba(53, 98, 255, 0.55); }
 .recent-tile:hover .tile-grade { opacity: 1; }
+.recent-tile.deleting { opacity: 0.4; pointer-events: none; }
+/* delete affordance: only on hover, so the strip stays quiet at rest */
+.tile-x {
+  position: absolute; top: -6px; right: -6px;
+  width: 20px; height: 20px; padding: 0;
+  border: none; border-radius: 50%;
+  background: #fff; color: #0d0d0d;
+  font-size: 14px; font-weight: 700; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; opacity: 0;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+.recent-tile:hover .tile-x { opacity: 1; }
+.tile-x:hover { transform: scale(1.15); }
 
 .type-wrap { position: relative; }
 #what-type {

@@ -1025,6 +1025,30 @@ def _blob_list(prefix):
         return json.loads(r.read().decode()).get("blobs", [])
 
 
+def delete_analysis(rid):
+    """Remove one gallery record — thumb, meta, and full data, every version."""
+    token = key("BLOB_READ_WRITE_TOKEN")
+    if not token:
+        raise RuntimeError("storage isn't configured")
+    rid = (rid or "").strip()
+    # ids are minted here as "<ms>-<hex>"; refuse anything that could wander
+    # outside the gallery prefix.
+    if not re.match(r"^[0-9]+-[0-9a-f]+$", rid):
+        raise RuntimeError("that isn't a gallery id")
+    urls = [b["url"] for b in _blob_list("gallery/" + rid)
+            if (b.get("pathname") or "").startswith("gallery/" + rid + ".")
+            or b.get("pathname") == "gallery/" + rid + ".jpg"]
+    if not urls:
+        return {"deleted": 0}
+    req = urllib.request.Request(
+        BLOB_API + "/delete", data=json.dumps({"urls": urls}).encode(),
+        method="POST",
+        headers={"Authorization": "Bearer " + token,
+                 "Content-Type": "application/json"})
+    urllib.request.urlopen(req, timeout=30).read()
+    return {"deleted": len(urls)}
+
+
 def gallery():
     """Recent analyses, newest first: id plus urls for thumb/meta/data."""
     token = key("BLOB_READ_WRITE_TOKEN")

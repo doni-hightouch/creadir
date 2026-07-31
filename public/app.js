@@ -139,10 +139,16 @@ async function loadRecent() {
     track.innerHTML = "";
     if (!items.length) { show($("recent"), false); return; }
     items.forEach((item) => {
-      const tile = document.createElement("button");
+      const tile = document.createElement("div");
       tile.className = "recent-tile";
-      tile.innerHTML = `<img alt="" loading="lazy"><span class="tile-grade"></span>`;
+      tile.innerHTML =
+        `<img alt="" loading="lazy"><span class="tile-grade"></span>` +
+        `<button class="tile-x" title="Delete this analysis" aria-label="Delete this analysis">×</button>`;
       tile.addEventListener("click", () => openStored(item));
+      tile.querySelector(".tile-x").addEventListener("click", (e) => {
+        e.stopPropagation(); // the tile itself opens the record
+        deleteStored(item, tile);
+      });
       track.appendChild(tile);
       fetch(item.meta + "?v=" + Date.now()).then((r) => r.json()).then((meta) => {
         tile.querySelector("img").src = item.thumb || meta.thumb || "";
@@ -155,6 +161,21 @@ async function loadRecent() {
     });
     show($("recent"));
   } catch { /* the gallery is a nice-to-have; never block the entry */ }
+}
+
+async function deleteStored(item, tile) {
+  const what = tile.title ? `"${tile.title}"` : "this analysis";
+  if (!confirm(`Delete ${what}? This can't be undone.`)) return;
+  tile.classList.add("deleting");
+  try {
+    await api("/api/delete", { id: item.id });
+    tile.remove();
+    if (!$("recent-track").children.length) show($("recent"), false);
+    toast("Deleted");
+  } catch (err) {
+    tile.classList.remove("deleting");
+    toast(err.message, true);
+  }
 }
 
 async function openStored(item) {

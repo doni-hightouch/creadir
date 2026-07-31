@@ -115,6 +115,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, _lib.feedback(body.get("message", "")))
             elif self.path == "/api/save":
                 self._send(200, _lib.save_analysis(body, body.get("id")))
+            elif self.path == "/api/delete":
+                self._send(200, _lib.delete_analysis(body.get("id")))
             else:
                 self._send(404, {"error": "not found"})
         except Exception as e:
