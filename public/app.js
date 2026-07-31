@@ -508,7 +508,7 @@ function setEyeState(cls) {
   } else if (cls === "done") {
     input.placeholder = ""; // the bar goes quiet; "Let's go!" does the talking
   } else {
-    input.placeholder = "Drop an image, paste a link, or type a concept…";
+    input.placeholder = "Drop an image or a link.";
   }
   show($("lets-go"), cls === "done");
   if (cls === "loading") {
