@@ -105,7 +105,7 @@
     <p class="panel-label" id="panel-label">Why this works</p>
     <div id="findings"></div>
     <div id="tryout" class="hidden">
-      <p class="panel-label">Prompted with the recipe</p>
+      <p class="panel-label">Prompted in this style</p>
       <div id="tryout-frame"><img id="tryout-img" alt="Generated from the recipe"></div>
       <p id="tryout-note"></p>
     </div>
@@ -121,15 +121,14 @@
 <!-- The recipe: how to prompt this direction, floating over the findings column -->
 <footer id="recipe" class="hidden">
   <div class="recipe-top">
-    <p class="recipe-label">How to prompt this</p>
+    <p class="recipe-label">Prompt in this style</p>
     <div class="recipe-actions">
       <button id="btn-copy-recipe" class="ghost-btn">Copy</button>
       <button id="btn-try-recipe" class="pill-btn">Generate</button>
     </div>
   </div>
   <div id="recipe-lines"></div>
-  <input id="recipe-subject" type="text" spellcheck="false" autocomplete="off"
-    placeholder="Swap in your own subject (optional)">
+  <p class="recipe-hint">The highlighted subject is editable — click it and type your own.</p>
 </footer>
 
 <div id="toast" class="hidden"></div>

@@ -463,31 +463,94 @@ function renderFindings(result, panelLabel) {
   show($("findings-panel"));
 }
 
-// ---------- the recipe: how to prompt this direction ----------
+// ---------- the recipe: prompt in this style ----------
 const RECIPE_LABELS = {
   framing: "Framing", light: "Light", grade: "Grade", mood: "Mood",
   space: "Space", type: "Type", finish: "Finish", layout: "Layout",
 };
+// each axis wears the color of the reading dimension it controls, so the
+// recipe visually answers "which of the six findings does this line teach"
+const RECIPE_COLORS = {
+  framing: "var(--focal)",   // framing decides where the eye lands
+  layout: "var(--layout)",
+  space: "var(--space)",
+  grade: "var(--color)",     // grade and light together are the color story
+  light: "var(--color)",
+  mood: "var(--concept)",    // mood is the concept made felt
+  type: "var(--type)",
+  finish: "var(--text)",     // craft — neutral, not a reading dimension
+};
+
+function currentSubject() {
+  const t = document.querySelector(".subject-token");
+  const v = t ? t.textContent.trim() : "";
+  return v || state.recipeSubject || "subject";
+}
 
 function recipeText() {
-  // what gets copied and generated: the lines only, no labels
-  return (state.recipe || []).map((r) => r.line).join("\n\n");
+  // what gets copied: the lines only, no labels, with the edited subject in place
+  const subject = currentSubject();
+  return (state.recipe || [])
+    .map((r) => r.line.replace(/\[subject\]/gi, subject))
+    .join("\n\n");
+}
+
+function syncTokens(from) {
+  document.querySelectorAll(".subject-token").forEach((t) => {
+    if (t !== from) t.textContent = from.textContent;
+  });
+}
+
+function makeToken() {
+  const t = document.createElement("span");
+  t.className = "subject-token";
+  t.contentEditable = "true";
+  t.spellcheck = false;
+  t.textContent = state.recipeSubject || "subject";
+  t.addEventListener("input", () => syncTokens(t));
+  t.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); t.blur(); }
+  });
+  t.addEventListener("blur", () => {
+    if (!t.textContent.trim()) t.textContent = state.recipeSubject || "subject";
+    syncTokens(t);
+  });
+  return t;
 }
 
 function renderRecipe(result) {
   state.recipe = result.recipe || [];
   // a bare noun phrase, not the full descriptive subject line — substituting
   // the latter would read garbled and smuggle this image's own styling back in
-  state.recipeSubject = (result.subject_short || "").trim();
+  state.recipeSubject = (result.subject_short || "").trim() || "subject";
+  // hidden context the adapt step needs that the recipe deliberately leaves out
+  state.recipeMeta = {
+    category: result.category || "",
+    overall: result.overall_read || "",
+    concept: (result.findings || [])
+      .filter((f) => f.dimension === "concept")
+      .map((f) => (f.gist ? f.gist + " — " : "") + (f.explanation || ""))
+      .join(" "),
+  };
   const wrap = $("recipe-lines");
   wrap.innerHTML = "";
   if (!state.recipe.length) { show($("recipe"), false); return; }
   state.recipe.forEach((r) => {
     const row = document.createElement("div");
     row.className = "recipe-row";
-    row.innerHTML = `<span class="recipe-axis"></span><p class="recipe-line"></p>`;
-    row.querySelector(".recipe-axis").textContent = RECIPE_LABELS[r.axis] || r.axis;
-    row.querySelector(".recipe-line").textContent = r.line;
+    const axis = document.createElement("span");
+    axis.className = "recipe-axis";
+    axis.textContent = RECIPE_LABELS[r.axis] || r.axis;
+    axis.style.color = RECIPE_COLORS[r.axis] || "var(--text-2)";
+    const line = document.createElement("p");
+    line.className = "recipe-line";
+    // the [subject] token becomes an editable pill, inline in the sentence
+    r.line.split(/\[subject\]/gi).forEach((part, i) => {
+      if (i > 0) line.appendChild(makeToken());
+      if (part) line.appendChild(document.createTextNode(part));
+    });
+    row.appendChild(axis);
+    row.appendChild(line);
     wrap.appendChild(row);
   });
   show($("recipe"));
@@ -511,26 +574,35 @@ $("btn-copy-recipe").addEventListener("click", async () => {
 });
 
 $("btn-try-recipe").addEventListener("click", () => {
-  const text = recipeText();
-  if (!text) return;
-  // [subject] would render literally, so fill it with the user's own subject
-  // if they typed one, otherwise the subject this analysis identified.
-  const subject = $("recipe-subject").value.trim() || state.recipeSubject || "product";
-  if (!subject) { toast("Type a subject to render", true); return; }
-  tryRecipe(text.replace(/\[subject\]/gi, subject), subject);
+  if (!(state.recipe || []).length) return;
+  tryRecipe(currentSubject());
 });
 
-async function tryRecipe(prompt, subject) {
+async function tryRecipe(subject) {
   const btn = $("btn-try-recipe");
   btn.disabled = true;
   btn.textContent = "Generating…";
   show($("tryout"), true);
-  $("tryout-note").textContent = "Rendering “" + subject + "” with this direction…";
+  $("tryout-note").textContent =
+    "Adapting the concept to “" + subject + "”, then rendering…";
   $("tryout-img").removeAttribute("src");
+  // keep the original's format: portrait stays portrait, landscape landscape
+  const img = $("ad-img");
+  const ratio = (img.naturalWidth || 1) / (img.naturalHeight || 1);
+  const size = ratio > 1.15 ? "1536x1024" : ratio < 0.87 ? "1024x1536" : "1024x1024";
   try {
-    const res = await api("/api/generate", { prompt, raw: true });
+    const res = await api("/api/generate", {
+      recipe: state.recipe.map((r) => r.line),
+      subject,
+      category: state.recipeMeta.category,
+      overall: state.recipeMeta.overall,
+      concept: state.recipeMeta.concept,
+      size,
+    });
     $("tryout-img").src = res.image;
-    $("tryout-note").textContent = "Prompted as “" + subject + "”. Compare it against the original.";
+    // show the adapted prompt — seeing what a director does with the recipe
+    // is the lesson
+    $("tryout-note").textContent = res.prompt_used || "";
   } catch (err) {
     $("tryout-note").textContent = err.message;
   } finally {

@@ -589,6 +589,68 @@ def analyze(image_or_images, context=None, force_category=None):
     return result
 
 
+ADAPT_SYSTEM = """You turn an art-direction recipe into ONE finished prompt for the \
+image model gpt-image-1, as an elite creative director adapting a proven piece to a \
+new subject.
+
+You receive: the original's format (its category), what made the original work (its \
+read and its concept), the recipe of art-direction decisions with [subject] marking \
+where the subject goes, and the user's new subject.
+
+Rules:
+- Same kind of artifact, always. An ad stays an ad. A photograph stays a photograph — \
+then absolutely no words, letters, logos or graphic marks. Packaging stays a packaging \
+shot, a UI stays a UI screen, a logo stays a logo mark, a poster-style social post \
+stays one.
+- Keep every craft decision in the recipe: framing, light, grade, space, type treatment.
+- Adapt the CONCEPT, not just the subject. If the original's move was an insult flipped \
+into an order, perform that same move for the new subject. Write the actual copy, in \
+double quotes, exactly as it should render — short, at most two lines of at most five \
+words. Never use the subject's bare name as the headline.
+- No real brands or trademarks; invent a plain generic mark only if the layout demands one.
+- Under 110 words, dense concrete natural language, in this order: artifact + subject, \
+composition, lighting, grade, type and copy, format.
+
+Return ONLY valid JSON, no markdown fences:
+{"prompt": "the finished generation prompt", "note": "one short sentence naming the conceptual move you adapted"}"""
+
+
+def adapt_recipe(body):
+    """Recipe + hidden context (format, concept) + new subject -> finished prompt.
+
+    The recipe is deliberately generic — that is what makes it teachable — so
+    it is under-specified for generation on its own. This step adds back what
+    the student never needs to see: what kind of artifact to make and how the
+    original's concept translates to the new subject.
+    """
+    lines = [l.strip() for l in (body.get("recipe") or [])
+             if isinstance(l, str) and l.strip()][:8]
+    if not lines:
+        raise RuntimeError("no recipe to adapt")
+    subject = (body.get("subject") or "").strip()[:80] or "the subject"
+    user = "Original format: %s\n" % (body.get("category") or "unknown")
+    if body.get("overall"):
+        user += "Overall read of the original: %s\n" % str(body["overall"])[:400]
+    if body.get("concept"):
+        user += "The original's concept: %s\n" % str(body["concept"])[:400]
+    user += "\nArt-direction recipe:\n" + "\n".join("- " + l for l in lines)
+    user += "\n\nNew subject: %s" % subject
+    if body.get("size"):
+        ratios = {"1024x1024": "1:1 square", "1024x1536": "2:3 portrait",
+                  "1536x1024": "3:2 landscape"}
+        user += "\nCanvas: %s" % ratios.get(body["size"], body["size"])
+    if key("ANTHROPIC_API_KEY"):
+        raw = anthropic_chat(ADAPT_SYSTEM, [{"type": "text", "text": user}])
+    else:
+        raw = openai_chat([{"role": "system", "content": ADAPT_SYSTEM},
+                           {"role": "user", "content": user}])
+    out = parse_json_reply(raw)
+    prompt = (out.get("prompt") or "").strip()
+    if not prompt:
+        raise RuntimeError("couldn't adapt the recipe — try again")
+    return {"prompt": prompt, "routing": (out.get("note") or "").strip()}
+
+
 def compile_prompt(fragments, extra, size=None):
     user = "Fragments:\n" + "\n".join("- " + f for f in fragments)
     if extra:
@@ -610,10 +672,8 @@ def generate(body):
     size = body.get("size", "1024x1536")
     if size not in ("1024x1024", "1024x1536", "1536x1024"):
         size = "1024x1536"
-    if body.get("raw") and body.get("prompt"):
-        # the recipe is already a finished prompt — recompiling it would
-        # rewrite the art direction we are trying to test
-        compiled = {"prompt": body["prompt"], "routing": "recipe, sent as written"}
+    if body.get("recipe"):
+        compiled = adapt_recipe(body)
     elif body.get("fragments"):
         compiled = compile_prompt(body["fragments"], body.get("extra", ""), size)
     elif body.get("prompt"):
