@@ -17,7 +17,7 @@ const DIMS = {
 };
 
 const $ = (id) => document.getElementById(id);
-const state = { tray: [], currentImage: null, mode: null };
+const state = { currentImage: null, mode: null };
 
 // ---------- helpers ----------
 function toast(msg, isError) {
@@ -259,7 +259,6 @@ input.addEventListener("keydown", (e) => { if (e.key === "Enter") submitText(); 
 function enterStage() {
   show($("entry"), false);
   show($("stage"));
-  show($("tray"));
   show($("btn-restart"));
   document.body.classList.add("staged");
   window.scrollTo(0, 0); // the stage always opens at the top
@@ -268,7 +267,6 @@ function enterStage() {
 function resetToEntry() {
   document.body.classList.remove("staged");
   show($("stage"), false);
-  show($("tray"), false);
   show($("btn-restart"), false);
   show($("entry"));
   show($("overall"), false);
@@ -276,6 +274,8 @@ function resetToEntry() {
   show($("sharpen-note"), false);
   show($("routing-note"), false);
   show($("btn-analyze-result"), false);
+  show($("recipe"), false);
+  show($("tryout"), false);
   $("findings").innerHTML = "";
   $("ad-img").removeAttribute("src");
   setGallery([]);
@@ -451,27 +451,92 @@ function renderFindings(result, panelLabel) {
       </button>
       <div class="finding-body">
         <p class="explain"></p>
-        <div class="chip-row">
-          <button class="chip" style="background:${dim.color}"></button>
-          <span class="add-hint">tap to add</span>
-        </div>
       </div>`;
     card.querySelector(".gist").textContent = f.gist || f.fragment;
     card.querySelector(".explain").textContent = f.explanation;
-    const chip = card.querySelector(".chip");
-    chip.textContent = f.fragment;
-    chip.addEventListener("click", (e) => {
-      e.stopPropagation();
-      addToTray(f.dimension, f.fragment);
-      chip.classList.add("added");
-      card.querySelector(".add-hint").textContent = "added";
-    });
     card.querySelector(".finding-head").addEventListener("click", () => {
       card.classList.toggle("open");
     });
     wrap.appendChild(card);
   });
+  renderRecipe(result);
   show($("findings-panel"));
+}
+
+// ---------- the recipe: how to prompt this direction ----------
+const RECIPE_LABELS = {
+  framing: "Framing", light: "Light", grade: "Grade", mood: "Mood",
+  space: "Space", type: "Type", finish: "Finish", layout: "Layout",
+};
+
+function recipeText() {
+  // what gets copied and generated: the lines only, no labels
+  return (state.recipe || []).map((r) => r.line).join("\n\n");
+}
+
+function renderRecipe(result) {
+  state.recipe = result.recipe || [];
+  // a bare noun phrase, not the full descriptive subject line — substituting
+  // the latter would read garbled and smuggle this image's own styling back in
+  state.recipeSubject = (result.subject_short || "").trim();
+  const wrap = $("recipe-lines");
+  wrap.innerHTML = "";
+  if (!state.recipe.length) { show($("recipe"), false); return; }
+  state.recipe.forEach((r) => {
+    const row = document.createElement("div");
+    row.className = "recipe-row";
+    row.innerHTML = `<span class="recipe-axis"></span><p class="recipe-line"></p>`;
+    row.querySelector(".recipe-axis").textContent = RECIPE_LABELS[r.axis] || r.axis;
+    row.querySelector(".recipe-line").textContent = r.line;
+    wrap.appendChild(row);
+  });
+  show($("recipe"));
+  // the module floats, so the column needs enough tail room that the last
+  // finding can still be scrolled clear of it — its height varies by axis count
+  requestAnimationFrame(() => {
+    const h = $("recipe").getBoundingClientRect().height;
+    $("findings-panel").style.paddingBottom = Math.round(h + 56) + "px";
+  });
+}
+
+$("btn-copy-recipe").addEventListener("click", async () => {
+  const text = recipeText();
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("Prompt copied");
+  } catch {
+    toast("Couldn't reach the clipboard", true);
+  }
+});
+
+$("btn-try-recipe").addEventListener("click", () => {
+  const text = recipeText();
+  if (!text) return;
+  // [subject] would render literally, so fill it with the user's own subject
+  // if they typed one, otherwise the subject this analysis identified.
+  const subject = $("recipe-subject").value.trim() || state.recipeSubject || "product";
+  if (!subject) { toast("Type a subject to render", true); return; }
+  tryRecipe(text.replace(/\[subject\]/gi, subject), subject);
+});
+
+async function tryRecipe(prompt, subject) {
+  const btn = $("btn-try-recipe");
+  btn.disabled = true;
+  btn.textContent = "Generating…";
+  show($("tryout"), true);
+  $("tryout-note").textContent = "Rendering “" + subject + "” with this direction…";
+  $("tryout-img").removeAttribute("src");
+  try {
+    const res = await api("/api/generate", { prompt, raw: true });
+    $("tryout-img").src = res.image;
+    $("tryout-note").textContent = "Prompted as “" + subject + "”. Compare it against the original.";
+  } catch (err) {
+    $("tryout-note").textContent = err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Generate";
+  }
 }
 
 // ---------- analyze flow ----------
@@ -484,6 +549,8 @@ function resetPanels(keepRouting) {
   show($("sharpen-note"), false);
   if (!keepRouting) show($("routing-note"), false);
   show($("btn-analyze-result"), false);
+  show($("recipe"), false);
+  show($("tryout"), false);
   $("findings").innerHTML = "";
 }
 
@@ -610,70 +677,6 @@ async function startGenerate(payload) {
   }
 }
 
-// ---------- tray ----------
-function addToTray(dimension, fragment) {
-  if (state.tray.some((t) => t.fragment === fragment)) return;
-  state.tray.push({ dimension, fragment });
-  renderTray();
-}
-
-function removeFromTray(fragment) {
-  state.tray = state.tray.filter((t) => t.fragment !== fragment);
-  renderTray();
-  document.querySelectorAll(".chip.added").forEach((chip) => {
-    if (chip.textContent === fragment) {
-      chip.classList.remove("added");
-      chip.closest(".finding").querySelector(".add-hint").textContent = "tap to add";
-    }
-  });
-}
-
-function renderTray() {
-  const wrap = $("tray-chips");
-  wrap.innerHTML = "";
-  if (!state.tray.length) {
-    wrap.innerHTML = `<span class="tray-empty">Tap a colored chip on the techniques you like — they become your prompt.</span>`;
-  } else {
-    state.tray.forEach((t) => {
-      const dim = DIMS[t.dimension] || { color: "#fff" };
-      const chip = document.createElement("button");
-      chip.className = "tray-chip";
-      chip.style.background = dim.color;
-      chip.innerHTML = `<span class="frag"></span><span class="x">×</span>`;
-      chip.querySelector(".frag").textContent = t.fragment;
-      chip.addEventListener("click", () => removeFromTray(t.fragment));
-      wrap.appendChild(chip);
-    });
-  }
-  const covered = new Set(state.tray.map((t) => t.dimension)).size;
-  $("tray-count").textContent = `· ${covered} of 6 dimensions`;
-  show($("compiled"), false);
-}
-
-$("btn-copy").addEventListener("click", async () => {
-  if (!state.tray.length) { toast("Add some fragments first"); return; }
-  const btn = $("btn-copy");
-  btn.disabled = true;
-  btn.textContent = "Composing…";
-  try {
-    const out = await api("/api/compile", { fragments: state.tray.map((t) => t.fragment) });
-    await navigator.clipboard.writeText(out.prompt);
-    const c = $("compiled");
-    c.textContent = out.prompt;
-    show(c);
-    toast("Copied — paste it into Ad Studio");
-  } catch (err) {
-    toast(err.message, true);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "Copy for Ad Studio";
-  }
-});
-
-$("btn-generate").addEventListener("click", () => {
-  if (!state.tray.length) { toast("Add some fragments first"); return; }
-  startGenerate({ fragments: state.tray.map((t) => t.fragment) });
-});
 
 // ---------- build the photo-real eye from the layered renders ----------
 // eye-sclera.png = bare ball; eye-straight.png = source for the iris disc.

@@ -13,6 +13,9 @@ import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIMENSIONS = ["focal", "layout", "space", "color", "type", "concept"]
+# generative axes for the "how to prompt this" recipe — deliberately a different
+# vocabulary from DIMENSIONS: those are for reading a piece, these for making one
+RECIPE_AXES = ["framing", "light", "grade", "mood", "space", "type", "finish", "layout"]
 
 
 def _load_dotenv():
@@ -403,6 +406,7 @@ weights, or letter grades in any text field — the texts explain, the scores de
 Return ONLY valid JSON, no markdown fences:
 {
   "subject": "one plain line: what this is and whose it is (e.g. 'The wordmark of The Verge, a tech news site') — visual evidence only if unrecognized",
+  "subject_short": "the bare thing pictured, 1-3 words, NO article, NO colour, NO styling, NO brand (e.g. 'baseball cap', 'skincare bottle', 'running shoe', 'app screen') — this gets substituted into the recipe, so it must read naturally after 'one' or 'a single'",
   "brand": {"name": "brand name or null", "domain": "the brand's primary website domain, best guess (e.g. 'nike.com'), or null", "bio": "2-3 short sentences from your knowledge: who the brand is, what it sells, how it positions itself; null if unknown"},
   "overall_read": "2-3 SHORT sentences: where the eye goes, the one idea (for photos: the story or feeling), what you feel",
   "category": "photo|print-ad|social-ad|banner|packaging|social-post|ui-web|logo|layout|other",
@@ -418,12 +422,45 @@ Return ONLY valid JSON, no markdown fences:
       "explanation": "1-2 short sentences, specific to THIS image, what it does to the viewer; name a canon move if one applies",
       "fragment": "prompt-ready phrase, max 12 words, lowercase, generic transferable technique"
     }
+  ],
+  "recipe": [
+    {
+      "axis": "framing|light|grade|mood|space|type|finish|layout",
+      "line": "one directive sentence, max 15 words, that recreates this axis of the art direction"
+    }
   ]
 }
 
 Rules: 4 to 6 findings — only the dimensions that actually carry this piece. Fragments \
 describe reusable techniques, never this ad's literal content or brand names. Teach \
-mostly from strengths; the one fix note lives in "sharpen" and is direct but kind."""
+mostly from strengths; the one fix note lives in "sharpen" and is direct but kind.
+
+"subject_short" is REQUIRED on every response, never omitted and never empty. It is the \
+bare thing pictured in 1-3 words with no article, no colour, no brand and no styling — \
+"baseball cap", not "a royal-blue 3D-rendered cap". It gets substituted into the recipe \
+in place of [subject], so it must read naturally after the word "one".
+
+THE RECIPE — how someone would prompt an image model to get this art direction, applied \
+to their own subject. Three or four axes is right for most pieces; five is the ceiling \
+and needs justifying. Include an axis ONLY if dropping it would visibly change the \
+result — a logo has no light, a UI screen has no mood, and most photographs do not need \
+all of framing, light, grade AND finish. Ruthless brevity is the point. Be CONCRETE \
+ABOUT CRAFT and EMOTIONAL ABOUT SUBJECT — that split is the whole point:
+- Never name the real subject, product, or brand. Where the subject belongs, write the \
+literal token [subject].
+- No hex codes and no literal colour names. Give the grade as behaviour and mood \
+("warm, pulled back a stop", "one saturated hue against near-black").
+- Never choreograph a pose or gaze direction. Give the feeling instead ("caught \
+mid-laugh, unguarded rather than posed").
+- Every line is a DECISION a model can execute, not an adjective. "One hard light from \
+the left, no fill" is a decision; "nice lighting" is not. Never reach for pop, clean, \
+modern, striking, premium, eye-catching or beautiful as a description of the RESULT — \
+those are verdicts, not directions. (A craft term like "whites held clean" is fine; \
+"make it clean" is not.)
+- Describe how to MAKE one, not what this one IS. "A single [subject] dead center on a \
+seamless dark field" is a recipe; "a blue cap on black" is a description.
+- Transferability test before you answer: could this recipe be applied to a completely \
+different subject and still produce this look? If not, it is too specific — rewrite it."""
 
 COMPILE_SYSTEM = """You compile image-generation prompts for ad creative, thinking like \
 an elite creative director. Given fragments (techniques the user selected) and optional \
@@ -523,6 +560,15 @@ def analyze(image_or_images, context=None, force_category=None):
         engine = openai_text_model()
     result = parse_json_reply(raw)
     result["findings"] = [f for f in result.get("findings", []) if f.get("dimension") in DIMENSIONS]
+    # the model occasionally drops this; keep it a clean short noun phrase or empty
+    short = re.sub(r"^(a|an|the)\s+", "", (result.get("subject_short") or "").strip(),
+                   flags=re.I).strip(" .")
+    result["subject_short"] = short[:40] if len(short.split()) <= 4 else ""
+    result["recipe"] = [
+        {"axis": r.get("axis"), "line": (r.get("line") or "").strip()}
+        for r in (result.get("recipe") or [])
+        if r.get("axis") in RECIPE_AXES and (r.get("line") or "").strip()
+    ][:5]
     if force_category:
         result["category"] = force_category
     category = result.get("category")
@@ -564,7 +610,11 @@ def generate(body):
     size = body.get("size", "1024x1536")
     if size not in ("1024x1024", "1024x1536", "1536x1024"):
         size = "1024x1536"
-    if body.get("fragments"):
+    if body.get("raw") and body.get("prompt"):
+        # the recipe is already a finished prompt — recompiling it would
+        # rewrite the art direction we are trying to test
+        compiled = {"prompt": body["prompt"], "routing": "recipe, sent as written"}
+    elif body.get("fragments"):
         compiled = compile_prompt(body["fragments"], body.get("extra", ""), size)
     elif body.get("prompt"):
         compiled = compile_prompt([], body["prompt"], size)

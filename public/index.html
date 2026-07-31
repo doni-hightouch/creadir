@@ -104,6 +104,11 @@
     </div>
     <p class="panel-label" id="panel-label">Why this works</p>
     <div id="findings"></div>
+    <div id="tryout" class="hidden">
+      <p class="panel-label">Prompted with the recipe</p>
+      <div id="tryout-frame"><img id="tryout-img" alt="Generated from the recipe"></div>
+      <p id="tryout-note"></p>
+    </div>
     <button id="btn-analyze-result" class="ghost-btn hidden">Break down why this works</button>
   </aside>
 </section>
@@ -113,17 +118,18 @@
   <p id="loading-text">Reading the work…</p>
 </div>
 
-<!-- Prompt tray -->
-<footer id="tray" class="hidden">
-  <div class="tray-top">
-    <p class="tray-label">Your prompt <span id="tray-count">· 0 of 6 dimensions</span></p>
-    <div class="tray-actions">
-      <button id="btn-copy" class="ghost-btn">Copy for Ad Studio</button>
-      <button id="btn-generate" class="pill-btn">Generate</button>
+<!-- The recipe: how to prompt this direction, floating over the findings column -->
+<footer id="recipe" class="hidden">
+  <div class="recipe-top">
+    <p class="recipe-label">How to prompt this</p>
+    <div class="recipe-actions">
+      <button id="btn-copy-recipe" class="ghost-btn">Copy</button>
+      <button id="btn-try-recipe" class="pill-btn">Generate</button>
     </div>
   </div>
-  <div id="tray-chips"><span class="tray-empty">Tap “add” on the techniques you like — they become your prompt.</span></div>
-  <p id="compiled" class="hidden"></p>
+  <div id="recipe-lines"></div>
+  <input id="recipe-subject" type="text" spellcheck="false" autocomplete="off"
+    placeholder="Swap in your own subject (optional)">
 </footer>
 
 <div id="toast" class="hidden"></div>
